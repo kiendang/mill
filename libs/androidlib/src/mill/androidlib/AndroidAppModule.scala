@@ -12,6 +12,7 @@ import upickle.default.*
 
 import scala.jdk.OptionConverters.RichOptional
 import scala.xml.{Attribute, Elem, NodeBuffer, Null, Text, XML}
+import java.nio.file.attribute.PosixFilePermission
 
 /**
  * Enumeration for Android Lint report formats, providing predefined formats
@@ -225,6 +226,22 @@ trait AndroidAppModule extends AndroidModule { outer =>
       .flatMap(ref => {
         val dest = Task.dest / ref.path.baseName
         os.unzip(ref.path, dest)
+
+        // Fix permissions of unzipped directories
+        // `os.walk.stream` doesn't work
+        def walk_(p: os.Path): geny.Generator[os.Path] = {
+          if (os.isDir(p))
+            os.list.stream(p) ++ os.list.stream(p).flatMap(walk_)
+          else geny.Generator()
+        }
+
+        walk_(dest).filter(os.isDir).foreach { p =>
+          os.perms.set(
+            p,
+            os.perms(p) + PosixFilePermission.OWNER_READ + PosixFilePermission.OWNER_EXECUTE
+          )
+        }
+
         val lookupPath = dest / "META-INF"
         if (os.exists(lookupPath)) {
           os.walk(lookupPath)
